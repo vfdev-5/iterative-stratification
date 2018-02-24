@@ -29,7 +29,7 @@ from sklearn.model_selection._split import _BaseKFold, _RepeatedSplits, \
     BaseShuffleSplit, _validate_shuffle_split
 
 
-def IterativeStratification(labels, r, random_state):
+def IterativeStratification(labels, r, random_state, weights=None):
     """This function implements the Iterative Stratification algorithm described
     in the following paper:
     Sechidis K., Tsoumakas G., Vlahavas I. (2011) On the Stratification of
@@ -80,6 +80,12 @@ def IterativeStratification(labels, r, random_state):
             label_idx = label_idx[random_state.choice(label_idx.shape[0])]
 
         sample_idxs = np.where(np.logical_and(labels[:, label_idx].flatten(), labels_not_processed_mask))[0]
+
+        if weights is not None:
+            # Order sample indices by descending weights
+            label_weights = weights[:, label_idx].flatten()
+            ordered_sample_indxs = np.argsort(label_weights)[::-1]
+            sample_idxs = ordered_sample_indxs[np.isin(ordered_sample_indxs, sample_idxs)]
 
         for sample_idx in sample_idxs:
             # Find the subset(s) with the largest number of desired examples
@@ -153,8 +159,9 @@ class MultilabelStratifiedKFold(_BaseKFold):
     n times.
     """
 
-    def __init__(self, n_splits=3, shuffle=False, random_state=None):
+    def __init__(self, n_splits=3, shuffle=False, random_state=None, weighted=False):
         super(MultilabelStratifiedKFold, self).__init__(n_splits, shuffle, random_state)
+        self.weighted = weighted
 
     def _make_test_folds(self, X, y):
         y = np.asarray(y, dtype=bool)
@@ -168,14 +175,17 @@ class MultilabelStratifiedKFold(_BaseKFold):
 
         rng = check_random_state(self.random_state)
         indices = np.arange(num_samples)
+        weights = X if self.weighted else None
 
         if self.shuffle:
             rng.shuffle(indices)
             y = y[indices]
+            if self.weighted:
+                weights = weights[indices]
 
         r = np.asarray([1 / self.n_splits] * self.n_splits)
 
-        test_folds = IterativeStratification(labels=y, r=r, random_state=rng)
+        test_folds = IterativeStratification(labels=y, r=r, random_state=rng, weights=weights)
 
         return test_folds[np.argsort(indices)]
 
